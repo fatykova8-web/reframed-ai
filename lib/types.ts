@@ -74,13 +74,17 @@ export type ItemAnalysis = {
 
 export type Recommendation = {
   id: string;
-  type: ExpressionLevel;
   title: string;
+  type: string;
   rationale: string;
-  pairings: string[];
   explanation: string;
+  pairings: string[];
   visualPrompt: string;
   moodboardImage?: string | null;
-  rating?: 'Love It' | 'Like It' | 'Not For Me';
-  status?: 'Wore It' | "Didn't Wear It";
+
+  reference?: string;
+  unexpectedMove?: string;
+
+  rating?: string;
+  status?: string;
 };
