@@ -12,8 +12,6 @@ const requestSchema = z.object({
   imageMimeType: z.string().min(3)
 });
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 function safeJsonParse<T>(text: string, fallback: T): T {
   try {
     const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -39,6 +37,7 @@ export async function POST(req: NextRequest) {
 
   const { imageBase64, imageMimeType } = parsed.data;
   const imageDataUrl = `data:${imageMimeType};base64,${imageBase64}`;
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   try {
     const response = await openai.chat.completions.create({

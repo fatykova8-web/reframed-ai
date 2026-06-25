@@ -58,6 +58,16 @@ export type MainColor = typeof MAIN_COLORS[number];
 export type FabricType = typeof FABRIC_TYPES[number];
 export type ExpressionLevel = 'Conservative' | 'Balanced' | 'Statement';
 export type WearTiming = 'Today' | 'Tomorrow' | 'This Week' | 'Just Exploring';
+export type ReferenceType =
+  | 'designer'
+  | 'celebrity/musician'
+  | 'movie/tv'
+  | 'event'
+  | 'food/drink'
+  | 'place/travel'
+  | 'aesthetic'
+  | 'historical era'
+  | 'vague/unknown';
 
 export type ItemAnalysis = {
   isSingleItem: boolean;
@@ -67,9 +77,31 @@ export type ItemAnalysis = {
   material: FabricType | string;
   pattern: string;
   fitOrSilhouette?: string;
+  fit?: string;
+  sleeveLength?: string;
+  length?: string;
+  collarOrNeckline?: string;
+  majorDetails?: string[];
   formality?: string;
   confidence: number;
   notes?: string;
+};
+
+export type InspirationDirection = {
+  title: string;
+  referenceType?: ReferenceType;
+  interpretation: string;
+  stylingCodes: string[];
+  wearableTranslation: string;
+  tension: string;
+  whyThisFits: string;
+  scores?: InspirationDirectionScore;
+};
+
+export type InspirationDirectionScore = {
+  groundingScore: number;
+  culturalAccuracyScore: number;
+  fashionTranslationScore: number;
 };
 
 export type Recommendation = {
@@ -77,10 +109,22 @@ export type Recommendation = {
   type: ExpressionLevel;
   title: string;
   rationale: string;
+  reference?: string;
+  unexpectedMove?: string;
   pairings: string[];
   explanation: string;
   visualPrompt: string;
   moodboardImage?: string | null;
+  qualityScores?: RecommendationScore;
   rating?: 'Love It' | 'Like It' | 'Not For Me';
   status?: 'Wore It' | "Didn't Wear It";
+};
+
+export type RecommendationScore = {
+  referenceFit: number;
+  garmentFidelity: number;
+  wearability: number;
+  originality: number;
+  visualPromptCompleteness: number;
+  critique: string;
 };

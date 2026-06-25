@@ -7,6 +7,7 @@ import {
   FEELINGS,
   MAIN_COLORS,
   OCCASIONS,
+  type InspirationDirection,
   type ItemAnalysis,
   type Recommendation
 } from '@/lib/types';
@@ -26,6 +27,11 @@ type Screen =
 type AnalyzeResult = { analysis?: ItemAnalysis; error?: string };
 type GenerateResult = { recommendations?: Recommendation[]; error?: string };
 type RefineResult = { recommendation?: Recommendation; error?: string };
+type ClarifyResult = {
+  referenceType?: string;
+  directions?: InspirationDirection[];
+  error?: string;
+};
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -98,8 +104,8 @@ export default function Home() {
   const [occasion, setOccasion] = useState<string>('');
   const [feeling, setFeeling] = useState<string>('');
   const [inspiration, setInspiration] = useState<string>('');
-  const [inspirationDirections, setInspirationDirections] = useState<string[]>([]);
-  const [selectedDirection, setSelectedDirection] = useState<string>('');
+  const [inspirationDirections, setInspirationDirections] = useState<InspirationDirection[]>([]);
+  const [selectedDirection, setSelectedDirection] = useState<InspirationDirection | null>(null);
   const [clarifying, setClarifying] = useState(false);
 
   const [analysis, setAnalysis] = useState<ItemAnalysis | null>(null);
@@ -132,6 +138,9 @@ export default function Home() {
     setFile(uploaded);
     setPreview(URL.createObjectURL(uploaded));
     setAnalysis(null);
+    setLooks([]);
+    setInspirationDirections([]);
+    setSelectedDirection(null);
     setError('');
     setAnalyzing(true);
 
@@ -187,37 +196,39 @@ export default function Home() {
         : prev
     );
   }
-async function clarifyInspiration() {
-  if (!inspiration.trim()) {
-    generateLooks();
-    return;
-  }
 
-  setClarifying(true);
-  setError('');
-
-  try {
-    const response = await fetch('/api/clarify-inspiration', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inspiration })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok || !data.directions) {
-      setError(data.error || 'Could not clarify inspiration.');
+  async function clarifyInspiration() {
+    if (!inspiration.trim()) {
+      generateLooks();
       return;
     }
 
-    setInspirationDirections(data.directions);
-    setScreen('clarifyInspiration');
-  } catch (err: any) {
-    setError(err?.message || 'Something went wrong.');
-  } finally {
-    setClarifying(false);
+    setClarifying(true);
+    setSelectedDirection(null);
+    setError('');
+
+    try {
+      const response = await fetch('/api/clarify-inspiration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inspiration })
+      });
+
+      const data = (await response.json()) as ClarifyResult;
+
+      if (!response.ok || !data.directions) {
+        setError(data.error || 'Could not clarify inspiration.');
+        return;
+      }
+
+      setInspirationDirections(data.directions);
+      setScreen('clarifyInspiration');
+    } catch (err: any) {
+      setError(err?.message || 'Something went wrong.');
+    } finally {
+      setClarifying(false);
+    }
   }
-}
 
   async function generateLooks() {
     if (!analysis || !canGenerate) return;
@@ -228,7 +239,13 @@ async function clarifyInspiration() {
       const response = await fetch('/api/generate-looks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ analysis, occasion, feeling, inspiration })
+        body: JSON.stringify({
+          analysis,
+          occasion,
+          feeling,
+          inspiration,
+          inspirationDirection: selectedDirection
+        })
       });
 
       const data = (await response.json()) as GenerateResult;
@@ -262,6 +279,7 @@ async function clarifyInspiration() {
           occasion,
           feeling,
           inspiration,
+          inspirationDirection: selectedDirection,
           originalLook: look,
           feedback
         })
@@ -677,53 +695,85 @@ async function clarifyInspiration() {
             </div>
 
             <button
-              disabled={!canGenerate}
+              disabled={!canGenerate || clarifying}
               onClick={clarifyInspiration}
               className="w-full rounded-full bg-black px-6 py-4 font-semibold text-white disabled:opacity-30"
             >
-              Generate Looks
+              {clarifying
+                ? 'Interpreting reference...'
+                : inspiration.trim()
+                  ? 'Interpret Reference'
+                  : 'Generate Looks'}
             </button>
           </div>
         )}
-{screen === 'clarifyInspiration' && (
-  <div className="space-y-6">
-    <div>
-      <h2 className="text-3xl font-semibold tracking-tight">
-        Which direction do you mean?
-      </h2>
-      <p className="mt-2 text-sm text-neutral-500">
-        References can mean different things. Choose the interpretation that best matches your vision.
-      </p>
-    </div>
 
-    <div className="space-y-3">
-      {inspirationDirections.length > 0 ? (
-        inspirationDirections.map((direction) => (
-          <OptionButton
-            key={direction}
-            label={direction}
-            selected={selectedDirection === direction}
-            onClick={() => setSelectedDirection(direction)}
-          />
-        ))
-      ) : (
-        <p className="text-sm text-neutral-500">
-          No directions found. Go back and try a clearer reference.
-        </p>
-      )}
-    </div>
+        {screen === 'clarifyInspiration' && (
+          <div className="space-y-6">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Taste direction
+              </p>
+              <h2 className="mt-2 text-3xl font-semibold tracking-tight">
+                What does “{inspiration}” mean here?
+              </h2>
+              <p className="mt-2 text-sm text-neutral-500">
+                Same reference, different taste. Pick the reading you want Reframed to
+                build from.
+              </p>
+            </div>
 
-    <button
-      disabled={!selectedDirection}
-      onClick={generateLooks}
-      className="w-full rounded-full bg-black px-6 py-4 font-semibold text-white disabled:opacity-30"
-    >
-      Generate Looks
-    </button>
-  </div>
-)}
-       
- {screen === 'loading' && (
+            <div className="space-y-3">
+              {inspirationDirections.length > 0 ? (
+                inspirationDirections.map((direction) => (
+                  <button
+                    key={`${direction.title}-${direction.interpretation}`}
+                    onClick={() => setSelectedDirection(direction)}
+                    className={`w-full rounded-[1.5rem] border p-4 text-left transition ${
+                      selectedDirection?.title === direction.title
+                        ? 'border-black bg-black text-white'
+                        : 'border-neutral-200 bg-white text-neutral-800 hover:border-neutral-500'
+                    }`}
+                  >
+                    <span className="text-base font-semibold">{direction.title}</span>
+                    <span className="mt-2 block text-sm opacity-80">
+                      {direction.interpretation}
+                    </span>
+                    <span className="mt-3 block text-xs font-semibold uppercase tracking-[0.18em] opacity-60">
+                      Styling codes
+                    </span>
+                    <span className="mt-1 block text-sm opacity-80">
+                      {direction.stylingCodes.join(', ')}
+                    </span>
+                    <span className="mt-3 block text-sm opacity-80">
+                      {direction.wearableTranslation}
+                    </span>
+                    {direction.whyThisFits && (
+                      <span className="mt-3 block text-xs leading-relaxed opacity-70">
+                        Why it fits: {direction.whyThisFits}
+                      </span>
+                    )}
+                  </button>
+                ))
+              ) : (
+                <p className="text-sm text-neutral-500">
+                  No strongly grounded directions found. Go back and try a more specific
+                  reference.
+                </p>
+              )}
+            </div>
+
+            <button
+              disabled={!selectedDirection}
+              onClick={generateLooks}
+              className="w-full rounded-full bg-black px-6 py-4 font-semibold text-white disabled:opacity-30"
+            >
+              Generate Looks From This Direction
+            </button>
+          </div>
+        )}
+
+        {screen === 'loading' && (
           <div className="flex min-h-[65vh] flex-col items-center justify-center gap-5 text-center">
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-neutral-200 border-t-black" />
             <div>
@@ -749,6 +799,11 @@ async function clarifyInspiration() {
               {inspiration && (
                 <p className="mt-1 text-sm text-neutral-500">
                   Inspired by: {inspiration}
+                </p>
+              )}
+              {selectedDirection && (
+                <p className="mt-1 text-sm text-neutral-500">
+                  Direction: {selectedDirection.title}
                 </p>
               )}
             </div>
