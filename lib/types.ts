@@ -58,6 +58,7 @@ export type MainColor = typeof MAIN_COLORS[number];
 export type FabricType = typeof FABRIC_TYPES[number];
 export type ExpressionLevel = 'Conservative' | 'Balanced' | 'Statement';
 export type WearTiming = 'Today' | 'Tomorrow' | 'This Week' | 'Just Exploring';
+
 export type ReferenceType =
   | 'designer'
   | 'celebrity/musician'
