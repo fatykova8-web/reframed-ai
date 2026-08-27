@@ -33,6 +33,40 @@ type ClarifyResult = {
   error?: string;
 };
 
+const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
+
+async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T & { error?: string }> {
+  const contentType = response.headers.get('content-type') || '';
+  const text = await response.text();
+
+  if (contentType.includes('application/json')) {
+    try {
+      return JSON.parse(text) as T & { error?: string };
+    } catch (error) {
+      console.error('[api-debug] Failed to parse JSON response', {
+        status: response.status,
+        statusText: response.statusText,
+        contentType,
+        bodyStart: text.slice(0, 160),
+        error
+      });
+
+      return { error: fallbackMessage } as T & { error?: string };
+    }
+  }
+
+  console.error('[api-debug] Non-JSON API response', {
+    status: response.status,
+    statusText: response.statusText,
+    contentType,
+    bodyStart: text.slice(0, 240)
+  });
+
+  return {
+    error: text.trim() || fallbackMessage
+  } as T & { error?: string };
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -135,6 +169,17 @@ export default function Home() {
       return;
     }
 
+    if (uploaded.size > MAX_UPLOAD_BYTES) {
+      setError('This image is too large. Please upload an image under 3 MB.');
+      console.error('[upload-debug] Upload rejected before API request', {
+        fileName: uploaded.name,
+        fileType: uploaded.type,
+        fileSizeBytes: uploaded.size,
+        maxUploadBytes: MAX_UPLOAD_BYTES
+      });
+      return;
+    }
+
     setFile(uploaded);
     setPreview(URL.createObjectURL(uploaded));
     setAnalysis(null);
@@ -146,13 +191,31 @@ export default function Home() {
 
     try {
       const imageBase64 = await fileToBase64(uploaded);
+      const requestBody = JSON.stringify({ imageBase64, imageMimeType: uploaded.type });
+      console.info('[upload-debug] Posting analyze-item request', {
+        fileName: uploaded.name,
+        fileType: uploaded.type,
+        fileSizeBytes: uploaded.size,
+        base64Length: imageBase64.length,
+        requestBodyBytes: new Blob([requestBody]).size
+      });
+
       const response = await fetch('/api/analyze-item', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64, imageMimeType: uploaded.type })
+        body: requestBody
       });
 
-      const data = (await response.json()) as AnalyzeResult;
+      console.info('[upload-debug] analyze-item response received', {
+        status: response.status,
+        ok: response.ok,
+        contentType: response.headers.get('content-type')
+      });
+
+      const data = await readJsonResponse<AnalyzeResult>(
+        response,
+        'Could not analyze this item.'
+      );
 
       if (!response.ok || !data.analysis) {
         setError(data.error || 'Could not analyze this item.');
@@ -214,7 +277,10 @@ export default function Home() {
         body: JSON.stringify({ inspiration })
       });
 
-      const data = (await response.json()) as ClarifyResult;
+      const data = await readJsonResponse<ClarifyResult>(
+        response,
+        'Could not clarify inspiration.'
+      );
 
       if (!response.ok || !data.directions) {
         setError(data.error || 'Could not clarify inspiration.');
@@ -248,7 +314,10 @@ export default function Home() {
         })
       });
 
-      const data = (await response.json()) as GenerateResult;
+      const data = await readJsonResponse<GenerateResult>(
+        response,
+        'Could not generate looks.'
+      );
 
       if (!response.ok) {
         setError(data.error || 'Could not generate looks.');
@@ -256,7 +325,12 @@ export default function Home() {
         return;
       }
 
-      setLooks(data.recommendations || []);
+      setLooks(
+        (data.recommendations || []).map((look) => ({
+          ...look,
+          uploadedItemImage: preview
+        }))
+      );
       setScreen('recommendations');
     } catch (err: any) {
       setError(err?.message || 'Something went wrong.');
@@ -285,7 +359,10 @@ export default function Home() {
         })
       });
 
-      const data = (await response.json()) as RefineResult;
+      const data = await readJsonResponse<RefineResult>(
+        response,
+        'Could not refine this look.'
+      );
 
       if (!response.ok || !data.recommendation) {
         setError(data.error || 'Could not refine this look.');
@@ -295,7 +372,8 @@ export default function Home() {
       const updatedLook = {
         ...data.recommendation,
         id: look.id,
-        moodboardImage: data.recommendation.moodboardImage ?? null
+        moodboardImage: data.recommendation.moodboardImage ?? null,
+        uploadedItemImage: look.uploadedItemImage ?? preview
       };
 
       setLooks((prev) =>
@@ -338,6 +416,25 @@ export default function Home() {
           </p>
           <h3 className="mt-1 text-2xl font-semibold tracking-tight">{look.title}</h3>
         </div>
+
+        {look.uploadedItemImage && (
+          <div className="mb-4 overflow-hidden rounded-3xl border border-neutral-200 bg-neutral-50">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={look.uploadedItemImage}
+              alt="Exact uploaded item"
+              className="aspect-square w-full object-cover"
+            />
+            <div className="border-t border-neutral-200 p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Exact uploaded item
+              </p>
+              <p className="mt-1 text-xs text-neutral-600">
+                This is the unchanged piece these suggestions are built around.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="mb-4 flex aspect-square items-center justify-center overflow-hidden rounded-3xl bg-neutral-100 text-center text-sm text-neutral-400">
           {look.moodboardImage ? (

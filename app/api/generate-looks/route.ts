@@ -89,9 +89,19 @@ async function createRecommendations(
   occasion: string,
   feeling: string,
   inspiration: string,
-  inspirationDirection?: InspirationDirection | null
+  inspirationDirection?: InspirationDirection | null,
+  requestId?: string
 ): Promise<Recommendation[]> {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  console.info('[generate-looks-debug] Sending OpenAI recommendation request', {
+    requestId,
+    model: process.env.OPENAI_TEXT_MODEL || 'gpt-4o-mini',
+    occasion,
+    feeling,
+    inspiration,
+    direction: inspirationDirection?.title
+  });
 
   const response = await openai.chat.completions.create({
     model: process.env.OPENAI_TEXT_MODEL || 'gpt-4o-mini',
@@ -115,6 +125,13 @@ async function createRecommendations(
     ]
   });
 
+  console.info('[generate-looks-debug] OpenAI recommendation response received', {
+    requestId,
+    responseId: response.id,
+    model: response.model,
+    finishReason: response.choices[0]?.finish_reason
+  });
+
   const parsed = safeJsonParse<{
     recommendations: RecommendationDraft[];
   }>(response.choices[0]?.message?.content || '{}', { recommendations: [] });
@@ -132,7 +149,8 @@ async function scoreAndRepairRecommendation({
   occasion,
   feeling,
   inspiration,
-  inspirationDirection
+  inspirationDirection,
+  requestId
 }: {
   recommendation: Recommendation;
   analysis: ItemAnalysis;
@@ -140,8 +158,15 @@ async function scoreAndRepairRecommendation({
   feeling: string;
   inspiration: string;
   inspirationDirection?: InspirationDirection | null;
+  requestId?: string;
 }): Promise<Recommendation> {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  console.info('[generate-looks-debug] Sending critic request', {
+    requestId,
+    lookId: recommendation.id,
+    lookType: recommendation.type
+  });
 
   const response = await openai.chat.completions.create({
     model: process.env.OPENAI_TEXT_MODEL || 'gpt-4o-mini',
@@ -166,6 +191,14 @@ async function scoreAndRepairRecommendation({
     ]
   });
 
+  console.info('[generate-looks-debug] Critic response received', {
+    requestId,
+    lookId: recommendation.id,
+    responseId: response.id,
+    model: response.model,
+    finishReason: response.choices[0]?.finish_reason
+  });
+
   const result = safeJsonParse<CriticResult>(
     response.choices[0]?.message?.content || '{}',
     {}
@@ -186,10 +219,21 @@ async function scoreAndRepairRecommendation({
       scores.visualPromptCompleteness < 8);
 
   if (shouldRewrite && !result.recommendation) {
+    console.error('[generate-looks-debug] Critic failed to rewrite weak look', {
+      requestId,
+      lookId: recommendation.id,
+      scores
+    });
     throw new Error('Quality critic failed to return a rewritten recommendation.');
   }
 
   if (shouldRewrite) {
+    console.info('[generate-looks-debug] Rewriting weak look before response', {
+      requestId,
+      lookId: recommendation.id,
+      scores
+    });
+
     return {
       ...recommendation,
       ...result.recommendation!,
@@ -198,6 +242,12 @@ async function scoreAndRepairRecommendation({
       qualityScores: scores
     };
   }
+
+  console.info('[generate-looks-debug] Look passed critic', {
+    requestId,
+    lookId: recommendation.id,
+    scores
+  });
 
   return {
     ...recommendation,
@@ -219,7 +269,16 @@ function enforceGarmentVisualPrompt(rec: Recommendation, analysis: ItemAnalysis)
 }
 
 async function generateMoodboardImage(prompt: string, analysis: ItemAnalysis): Promise<string | null> {
-  if (process.env.GENERATE_MOODBOARD_IMAGES !== 'true') return null;
+  if (
+    process.env.GENERATE_MOODBOARD_IMAGES !== 'true' ||
+    process.env.GENERATE_MOODBOARD_IMAGES_SYNC !== 'true'
+  ) {
+    console.info('[generate-looks-debug] Skipping synchronous moodboard image generation', {
+      enabled: process.env.GENERATE_MOODBOARD_IMAGES === 'true',
+      syncEnabled: process.env.GENERATE_MOODBOARD_IMAGES_SYNC === 'true'
+    });
+    return null;
+  }
 
   try {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -240,17 +299,42 @@ async function generateMoodboardImage(prompt: string, analysis: ItemAnalysis): P
 }
 
 export async function POST(req: NextRequest) {
+  const requestId = crypto.randomUUID();
+
+  console.info('[generate-looks-debug] Request received', {
+    requestId,
+    contentType: req.headers.get('content-type'),
+    contentLength: req.headers.get('content-length')
+  });
+
   if (!process.env.OPENAI_API_KEY) {
+    console.error('[generate-looks-debug] Missing OpenAI API key', { requestId });
     return NextResponse.json(
       { error: 'Missing OPENAI_API_KEY. Add it to .env.local and restart npm run dev.' },
       { status: 500 }
     );
   }
 
-  const body = await req.json();
+  let body: unknown;
+
+  try {
+    body = await req.json();
+  } catch (error: any) {
+    console.error('[generate-looks-debug] Failed to parse request JSON', {
+      requestId,
+      error: error?.message || error
+    });
+
+    return NextResponse.json({ error: 'Invalid JSON request payload.' }, { status: 400 });
+  }
+
   const parsed = requestSchema.safeParse(body);
 
   if (!parsed.success) {
+    console.error('[generate-looks-debug] Invalid request payload', {
+      requestId,
+      issues: parsed.error.flatten()
+    });
     return NextResponse.json({ error: 'Invalid request payload.' }, { status: 400 });
   }
 
@@ -262,8 +346,14 @@ export async function POST(req: NextRequest) {
       occasion,
       feeling,
       inspiration,
-      inspirationDirection
+      inspirationDirection,
+      requestId
     );
+
+    console.info('[generate-looks-debug] Candidate recommendations created', {
+      requestId,
+      recommendationCount: recommendations.length
+    });
 
     const scoredRecommendations = await Promise.all(
       recommendations.map((recommendation) =>
@@ -273,7 +363,8 @@ export async function POST(req: NextRequest) {
           occasion,
           feeling,
           inspiration,
-          inspirationDirection
+          inspirationDirection,
+          requestId
         })
       )
     );
@@ -289,6 +380,12 @@ export async function POST(req: NextRequest) {
       })
     );
 
+    console.info('[generate-looks-debug] Returning JSON response', {
+      requestId,
+      status: 200,
+      recommendationCount: withImages.length
+    });
+
     return NextResponse.json({
       analysis,
       inspiration,
@@ -296,13 +393,18 @@ export async function POST(req: NextRequest) {
       recommendations: withImages
     });
   } catch (error: any) {
-    console.error(error);
+    console.error('[generate-looks-debug] Request failed', {
+      requestId,
+      status: error?.status,
+      message: error?.message,
+      errorBody: error?.error || error?.response?.data || error
+    });
 
     return NextResponse.json(
       {
         error: error?.message || 'Something went wrong while generating looks.'
       },
-      { status: 500 }
+      { status: error?.status || 500 }
     );
   }
 }

@@ -115,6 +115,7 @@ export type Recommendation = {
   explanation: string;
   visualPrompt: string;
   moodboardImage?: string | null;
+  uploadedItemImage?: string | null;
   qualityScores?: RecommendationScore;
   rating?: 'Love It' | 'Like It' | 'Not For Me';
   status?: 'Wore It' | "Didn't Wear It";

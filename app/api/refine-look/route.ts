@@ -82,17 +82,42 @@ async function generateMoodboardImage(prompt: string, analysis: ItemAnalysis): P
 }
 
 export async function POST(req: NextRequest) {
+  const requestId = crypto.randomUUID();
+
+  console.info('[refine-look-debug] Request received', {
+    requestId,
+    contentType: req.headers.get('content-type'),
+    contentLength: req.headers.get('content-length')
+  });
+
   if (!process.env.OPENAI_API_KEY) {
+    console.error('[refine-look-debug] Missing OpenAI API key', { requestId });
     return NextResponse.json(
       { error: 'Missing OPENAI_API_KEY.' },
       { status: 500 }
     );
   }
 
-  const body = await req.json();
+  let body: unknown;
+
+  try {
+    body = await req.json();
+  } catch (error: any) {
+    console.error('[refine-look-debug] Failed to parse request JSON', {
+      requestId,
+      error: error?.message || error
+    });
+
+    return NextResponse.json({ error: 'Invalid JSON request payload.' }, { status: 400 });
+  }
+
   const parsed = requestSchema.safeParse(body);
 
   if (!parsed.success) {
+    console.error('[refine-look-debug] Invalid request payload', {
+      requestId,
+      issues: parsed.error.flatten()
+    });
     return NextResponse.json({ error: 'Invalid request payload.' }, { status: 400 });
   }
 
@@ -173,6 +198,14 @@ Return ONLY valid JSON:
 
   try {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    console.info('[refine-look-debug] Sending OpenAI refinement request', {
+      requestId,
+      model: process.env.OPENAI_TEXT_MODEL || 'gpt-4o-mini',
+      lookId: originalLook?.id,
+      feedback
+    });
+
     const response = await openai.chat.completions.create({
       model: process.env.OPENAI_TEXT_MODEL || 'gpt-4o-mini',
       response_format: { type: 'json_object' },
@@ -188,11 +221,22 @@ Return ONLY valid JSON:
       ]
     });
 
+    console.info('[refine-look-debug] OpenAI refinement response received', {
+      requestId,
+      responseId: response.id,
+      model: response.model,
+      finishReason: response.choices[0]?.finish_reason
+    });
+
     const result = safeJsonParse<{
       recommendation?: Omit<Recommendation, 'id' | 'moodboardImage'>;
     }>(response.choices[0]?.message?.content || '{}', {});
 
     if (!result.recommendation) {
+      console.error('[refine-look-debug] No refined recommendation returned', {
+        requestId
+      });
+
       return NextResponse.json(
         { error: 'No refined recommendation returned.' },
         { status: 500 }
@@ -204,6 +248,12 @@ Return ONLY valid JSON:
       analysis
     );
 
+    console.info('[refine-look-debug] Returning JSON response', {
+      requestId,
+      status: 200,
+      hasMoodboardImage: Boolean(moodboardImage)
+    });
+
     return NextResponse.json({
       recommendation: {
         ...result.recommendation,
@@ -211,11 +261,16 @@ Return ONLY valid JSON:
       }
     });
   } catch (error: any) {
-    console.error(error);
+    console.error('[refine-look-debug] Request failed', {
+      requestId,
+      status: error?.status,
+      message: error?.message,
+      errorBody: error?.error || error?.response?.data || error
+    });
 
     return NextResponse.json(
       { error: error?.message || 'Could not refine look.' },
-      { status: 500 }
+      { status: error?.status || 500 }
     );
   }
 }

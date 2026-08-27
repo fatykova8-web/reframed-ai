@@ -38,14 +38,39 @@ function safeJsonParse<T>(text: string, fallback: T): T {
 }
 
 export async function POST(req: NextRequest) {
+  const requestId = crypto.randomUUID();
+
+  console.info('[clarify-inspiration-debug] Request received', {
+    requestId,
+    contentType: req.headers.get('content-type'),
+    contentLength: req.headers.get('content-length')
+  });
+
   if (!process.env.OPENAI_API_KEY) {
+    console.error('[clarify-inspiration-debug] Missing OpenAI API key', { requestId });
     return NextResponse.json({ error: 'Missing OPENAI_API_KEY.' }, { status: 500 });
   }
 
-  const body = await req.json();
+  let body: unknown;
+
+  try {
+    body = await req.json();
+  } catch (error: any) {
+    console.error('[clarify-inspiration-debug] Failed to parse request JSON', {
+      requestId,
+      error: error?.message || error
+    });
+
+    return NextResponse.json({ error: 'Invalid JSON request payload.' }, { status: 400 });
+  }
+
   const parsed = requestSchema.safeParse(body);
 
   if (!parsed.success) {
+    console.error('[clarify-inspiration-debug] Invalid request payload', {
+      requestId,
+      issues: parsed.error.flatten()
+    });
     return NextResponse.json({ error: 'Invalid inspiration.' }, { status: 400 });
   }
 
@@ -145,6 +170,12 @@ Return ONLY valid JSON:
 `;
 
   try {
+    console.info('[clarify-inspiration-debug] Sending OpenAI request', {
+      requestId,
+      model: process.env.OPENAI_TEXT_MODEL || 'gpt-4o-mini',
+      inspirationLength: inspiration.length
+    });
+
     const response = await openai.chat.completions.create({
       model: process.env.OPENAI_TEXT_MODEL || 'gpt-4o-mini',
       response_format: { type: 'json_object' },
@@ -152,6 +183,13 @@ Return ONLY valid JSON:
         { role: 'system', content: 'Return only valid JSON.' },
         { role: 'user', content: prompt }
       ]
+    });
+
+    console.info('[clarify-inspiration-debug] OpenAI response received', {
+      requestId,
+      responseId: response.id,
+      model: response.model,
+      finishReason: response.choices[0]?.finish_reason
     });
 
     const result = safeJsonParse<{
@@ -197,11 +235,25 @@ Return ONLY valid JSON:
         referenceType: direction.referenceType || referenceType
       }));
 
+    console.info('[clarify-inspiration-debug] Returning JSON response', {
+      requestId,
+      status: 200,
+      referenceType,
+      directionCount: directions.length
+    });
+
     return NextResponse.json({ referenceType, directions });
   } catch (error: any) {
+    console.error('[clarify-inspiration-debug] OpenAI request failed', {
+      requestId,
+      status: error?.status,
+      message: error?.message,
+      errorBody: error?.error || error?.response?.data || error
+    });
+
     return NextResponse.json(
       { error: error?.message || 'Could not clarify inspiration.' },
-      { status: 500 }
+      { status: error?.status || 500 }
     );
   }
 }
