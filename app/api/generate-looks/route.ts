@@ -7,7 +7,8 @@ import type {
   InspirationDirection,
   ItemAnalysis,
   Recommendation,
-  RecommendationScore
+  RecommendationScore,
+  StylingContext
 } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -60,9 +61,21 @@ const inspirationDirectionSchema = z.object({
     .optional()
 });
 
+const stylingContextSchema = z.object({
+  rawText: z.string().default(''),
+  occasion: z.string().default(''),
+  city: z.string().optional(),
+  timing: z.string().default('unspecified timing'),
+  season: z.string().default('unspecified season'),
+  weatherSummary: z.string().default(''),
+  practicalityNotes: z.array(z.string()).default([]),
+  isWeatherLive: z.boolean().default(false)
+});
+
 const requestSchema = z.object({
   analysis: itemAnalysisSchema,
   occasion: z.string().min(1),
+  stylingContext: stylingContextSchema.optional(),
   feeling: z.string().min(1),
   inspiration: z.string().optional().default(''),
   inspirationDirection: inspirationDirectionSchema.nullable().optional()
@@ -87,6 +100,7 @@ type CriticResult = {
 async function createRecommendations(
   analysis: ItemAnalysis,
   occasion: string,
+  stylingContext: StylingContext | undefined,
   feeling: string,
   inspiration: string,
   inspirationDirection?: InspirationDirection | null,
@@ -119,7 +133,8 @@ async function createRecommendations(
           occasion as any,
           feeling as any,
           inspiration as any,
-          inspirationDirection
+          inspirationDirection,
+          stylingContext
         )
       }
     ]
@@ -147,6 +162,7 @@ async function scoreAndRepairRecommendation({
   recommendation,
   analysis,
   occasion,
+  stylingContext,
   feeling,
   inspiration,
   inspirationDirection,
@@ -155,6 +171,7 @@ async function scoreAndRepairRecommendation({
   recommendation: Recommendation;
   analysis: ItemAnalysis;
   occasion: string;
+  stylingContext?: StylingContext;
   feeling: string;
   inspiration: string;
   inspirationDirection?: InspirationDirection | null;
@@ -182,6 +199,7 @@ async function scoreAndRepairRecommendation({
         content: recommendationCriticPrompt({
           analysis,
           occasion,
+          stylingContext,
           feeling,
           inspiration,
           inspirationDirection,
@@ -259,6 +277,7 @@ async function diversifyRecommendationSet({
   recommendations,
   analysis,
   occasion,
+  stylingContext,
   feeling,
   inspiration,
   inspirationDirection,
@@ -267,6 +286,7 @@ async function diversifyRecommendationSet({
   recommendations: Recommendation[];
   analysis: ItemAnalysis;
   occasion: string;
+  stylingContext?: StylingContext;
   feeling: string;
   inspiration: string;
   inspirationDirection?: InspirationDirection | null;
@@ -298,6 +318,7 @@ User-confirmed garment:
 ${JSON.stringify(analysis, null, 2)}
 
 Occasion: ${occasion}
+Detected wearing context: ${stylingContext ? JSON.stringify(stylingContext, null, 2) : 'None inferred'}
 Desired feeling: ${feeling}
 Original inspiration: ${inspiration || 'No specific inspiration provided'}
 Selected inspiration direction: ${
@@ -538,6 +559,7 @@ export async function POST(req: NextRequest) {
   const {
     analysis,
     occasion,
+    stylingContext,
     feeling,
     inspiration,
     inspirationDirection
@@ -547,6 +569,7 @@ export async function POST(req: NextRequest) {
     const recommendations = await createRecommendations(
       analysis,
       occasion,
+      stylingContext,
       feeling,
       inspiration,
       inspirationDirection,
@@ -562,6 +585,7 @@ export async function POST(req: NextRequest) {
       recommendations,
       analysis,
       occasion,
+      stylingContext,
       feeling,
       inspiration,
       inspirationDirection,
@@ -574,6 +598,7 @@ export async function POST(req: NextRequest) {
           recommendation,
           analysis,
           occasion,
+          stylingContext,
           feeling,
           inspiration,
           inspirationDirection,

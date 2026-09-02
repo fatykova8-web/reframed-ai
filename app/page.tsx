@@ -6,11 +6,11 @@ import {
   FABRIC_TYPES,
   FEELINGS,
   MAIN_COLORS,
-  OCCASIONS,
   type InspirationDirection,
   type ItemAnalysis,
   type Recommendation
 } from '@/lib/types';
+import { buildStylingContext } from '@/lib/stylingContext';
 
 type Screen =
   | 'landing'
@@ -154,6 +154,7 @@ export default function Home() {
     () => Boolean(analysis && occasion && feeling),
     [analysis, occasion, feeling]
   );
+  const stylingContext = useMemo(() => buildStylingContext(occasion), [occasion]);
 
   function navigate(next: Screen) {
     setScreen(next);
@@ -309,6 +310,7 @@ export default function Home() {
         body: JSON.stringify({
           analysis,
           occasion,
+          stylingContext,
           feeling,
           inspiration,
           inspirationDirection: selectedDirection
@@ -352,6 +354,7 @@ export default function Home() {
         body: JSON.stringify({
           analysis,
           occasion,
+          stylingContext,
           feeling,
           inspiration,
           inspirationDirection: selectedDirection,
@@ -696,15 +699,64 @@ export default function Home() {
 
         {screen === 'occasion' && (
           <div className="space-y-6">
-            <h2 className="text-3xl font-semibold tracking-tight">Where are you going?</h2>
-            <div className="grid grid-cols-2 gap-3">
-              {OCCASIONS.map((item) => (
-                <OptionButton
+            <div>
+              <h2 className="text-3xl font-semibold tracking-tight">
+                Where are you wearing this?
+              </h2>
+              <p className="mt-2 text-sm text-neutral-500">
+                Type the plan naturally. I’ll infer occasion, city, timing, season, and practical weather needs.
+              </p>
+            </div>
+
+            <input
+              type="text"
+              value={occasion}
+              onChange={(e) => setOccasion(e.target.value)}
+              placeholder="Dinner in Paris tonight, work in Toronto, no plans..."
+              className="w-full rounded-2xl border border-neutral-200 p-4"
+            />
+
+            {occasion.trim() && (
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                  Detected context
+                </p>
+                <p className="mt-2 text-sm font-semibold text-neutral-900">
+                  {[
+                    stylingContext.occasion,
+                    stylingContext.city,
+                    stylingContext.timing,
+                    stylingContext.season
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-neutral-500">
+                  {stylingContext.weatherSummary}
+                </p>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              {[
+                'Dinner tonight',
+                'Work tomorrow',
+                'Brunch this weekend',
+                'Vacation dinner',
+                'Gallery opening',
+                'No plans, just ideas'
+              ].map((item) => (
+                <button
                   key={item}
-                  label={item}
-                  selected={occasion === item}
                   onClick={() => setOccasion(item)}
-                />
+                  className={`rounded-full border px-4 py-2 text-sm ${
+                    occasion === item
+                      ? 'border-black bg-black text-white'
+                      : 'border-neutral-200 bg-white text-neutral-800'
+                  }`}
+                >
+                  {item}
+                </button>
               ))}
             </div>
             <button
@@ -746,7 +798,7 @@ export default function Home() {
           <div className="space-y-6">
             <div>
               <h2 className="text-3xl font-semibold tracking-tight">
-                What inspired this look?
+                What are you feeling inspired by right now?
               </h2>
               <p className="mt-2 text-sm text-neutral-500">
                 Optional. Reference a decade, runway moment, designer, movie,
@@ -758,7 +810,7 @@ export default function Home() {
               type="text"
               value={inspiration}
               onChange={(e) => setInspiration(e.target.value)}
-              placeholder="Mob Wife, To Pimp A Butterfly, Studio 54..."
+              placeholder="Galliano 2000, rainy Paris, gothic but soft..."
               className="w-full rounded-2xl border border-neutral-200 p-4"
             />
 
@@ -898,6 +950,12 @@ export default function Home() {
               {selectedDirection && (
                 <p className="mt-1 text-sm text-neutral-500">
                   Direction: {selectedDirection.title}
+                </p>
+              )}
+              {occasion && (
+                <p className="mt-1 text-sm text-neutral-500">
+                  Context: {stylingContext.occasion}
+                  {stylingContext.city ? ` in ${stylingContext.city}` : ''} · {stylingContext.season}
                 </p>
               )}
             </div>

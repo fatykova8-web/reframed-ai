@@ -1,7 +1,8 @@
-import type { Feeling, Occasion, InspirationDirection, ItemAnalysis } from './types';
+import type { Feeling, Occasion, InspirationDirection, ItemAnalysis, StylingContext } from './types';
 import { garmentDnaLockText, garmentDnaText } from './garmentDna';
 import { fashionLibraryPromptText } from './knowledge/fashionLibrary';
 import { fashionHistoryPromptText } from './knowledge/fashionHistoryLibrary';
+import { stylingContextPromptText } from './stylingContext';
 
 export function itemRecognitionPrompt() {
   return `You are a clothing item recognition system for a fashion styling app called Reframed.
@@ -70,7 +71,8 @@ export function recommendationPrompt(
   occasion: Occasion,
   feeling: Feeling,
   inspiration: string,
-  inspirationDirection?: InspirationDirection | null
+  inspirationDirection?: InspirationDirection | null,
+  stylingContext?: StylingContext | null
 ) {
   const directionContext = inspirationDirection
     ? `
@@ -97,6 +99,9 @@ User context:
 - Desired feeling: ${feeling}
 - Inspiration / cultural reference: ${inspiration || 'No specific inspiration provided'}
 ${directionContext}
+
+Detected wearing context:
+${stylingContextPromptText(stylingContext)}
 
 Reframed taste philosophy:
 Every recommendation must follow this ratio:
@@ -180,6 +185,8 @@ Important product rules:
 - ${garmentLock}
 - The uploaded item must be the hero of every recommendation, not an afterthought.
 - The occasion defines the boundary.
+- The detected wearing context should refine practicality: city/place, timing, season, likely climate, commute, indoor/outdoor assumptions, and weather-flexible choices.
+- If live weather is not available, be transparent in the logic and use inferred season/city climate rather than pretending to know exact weather.
 - The desired feeling defines the emotional direction.
 - Creative, artistic, playful, or statement does NOT mean inappropriate.
 - Do not suggest buying new items.
@@ -239,6 +246,7 @@ Return ONLY valid JSON with this exact shape:
 export function recommendationCriticPrompt({
   analysis,
   occasion,
+  stylingContext,
   feeling,
   inspiration,
   inspirationDirection,
@@ -246,6 +254,7 @@ export function recommendationCriticPrompt({
 }: {
   analysis: ItemAnalysis;
   occasion: string;
+  stylingContext?: StylingContext | null;
   feeling: string;
   inspiration: string;
   inspirationDirection?: InspirationDirection | null;
@@ -275,6 +284,9 @@ User context:
     inspirationDirection ? JSON.stringify(inspirationDirection, null, 2) : 'None selected'
   }
 
+Detected wearing context:
+${stylingContextPromptText(stylingContext)}
+
 Generated look:
 ${JSON.stringify(recommendation, null, 2)}
 
@@ -282,6 +294,7 @@ Score the look from 0-10:
 - referenceFit: Does the look directly use the original inspiration and selected direction as the primary creative source?
 - garmentFidelity: Does the look keep the uploaded item's category, color, material, pattern, silhouette, fit, sleeve length, length, collar/neckline, and major details consistent, especially in visualPrompt?
 - wearability: Is it realistic for the occasion?
+- wearability should account for city/place, season, timing, likely climate, and practical weather needs when provided.
 - originality: Is it interesting without becoming unrelated?
 - visualPromptCompleteness: Does the visual prompt include the exact uploaded item plus all key pairing items?
 
