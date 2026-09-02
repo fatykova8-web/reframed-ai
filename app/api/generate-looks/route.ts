@@ -383,13 +383,13 @@ function enforceGarmentVisualPrompt(rec: Recommendation, analysis: ItemAnalysis)
 }
 
 async function generateMoodboardImage({
-  prompt,
   analysis,
+  recommendation,
   requestId,
   lookId
 }: {
-  prompt: string;
   analysis: ItemAnalysis;
+  recommendation: Recommendation;
   requestId?: string;
   lookId?: string;
 }): Promise<string | null> {
@@ -402,22 +402,58 @@ async function generateMoodboardImage({
     return null;
   }
 
-  const collagePrompt = `${prompt}
+  const garmentCategory = String(analysis.category || 'garment').toLowerCase();
+  const blockedGarmentTerms = [
+    garmentCategory,
+    'shirt',
+    'blouse',
+    'top',
+    'dress',
+    'skirt',
+    'jacket',
+    'vest',
+    'sweater',
+    't-shirt',
+    'crop top',
+    'jumpsuit',
+    'overalls'
+  ]
+    .filter((term, index, terms) => Boolean(term) && terms.indexOf(term) === index)
+    .join(', ');
 
-Create a square fashion outfit inspiration collage / flat-lay for the styling recommendation.
+  const collagePrompt = `Create a square fashion outfit inspiration collage / flat-lay for this styling recommendation.
+
+Look title:
+${recommendation.title}
+
+Reference:
+${recommendation.reference || 'No specific reference'}
+
+Unexpected styling move:
+${recommendation.unexpectedMove || 'None'}
+
+Supporting pieces to show:
+${recommendation.pairings.map((pairing) => `- ${pairing}`).join('\n')}
+
+Styling rationale:
+${recommendation.rationale}
+
+Explanation:
+${recommendation.explanation}
 
 Important composition rule:
 - The app will overlay the user's exact uploaded garment photo on top of this collage.
 - Generate the supporting outfit pieces, accessories, color mood, and reference atmosphere around a clean open space in the upper-left area.
 - Do not recreate, repaint, redraw, replace, or include another version of the uploaded garment.
-- Do not add a second blouse/top/dress/shirt that could be mistaken for the user's garment.
+- Do not include any standalone ${blockedGarmentTerms} that could be mistaken for the uploaded item.
 - Show all key pairing items named in the look, arranged as a polished styling board around the reserved source-item space.
 - Do not show a human model.
 - Do not include text, labels, captions, UI, or watermarks.
 - Keep the composition clean, editorial, and useful for deciding whether to wear the outfit.
+- Use the selected reference as atmosphere and styling taste only; the uploaded garment itself is already handled by the app overlay.
 
-Exact Garment DNA: ${garmentDescriptor(analysis)}.
-${garmentDnaLockText(analysis)}`;
+Uploaded garment already handled by overlay:
+${garmentDescriptor(analysis)}`;
 
   try {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -553,8 +589,8 @@ export async function POST(req: NextRequest) {
         return {
           ...groundedRec,
           moodboardImage: await generateMoodboardImage({
-            prompt: groundedRec.visualPrompt,
             analysis,
+            recommendation: groundedRec,
             requestId,
             lookId: groundedRec.id
           })
