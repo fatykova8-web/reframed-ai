@@ -1,6 +1,7 @@
 import type { Feeling, Occasion, InspirationDirection, ItemAnalysis } from './types';
 import { garmentDnaLockText, garmentDnaText } from './garmentDna';
 import { fashionLibraryPromptText } from './knowledge/fashionLibrary';
+import { fashionHistoryPromptText } from './knowledge/fashionHistoryLibrary';
 
 export function itemRecognitionPrompt() {
   return `You are a clothing item recognition system for a fashion styling app called Reframed.
@@ -170,6 +171,9 @@ Only use the general reference library if it directly supports the user's inspir
 General reference library:
 ${fashionLibraryPromptText()}
 
+Fashion history library:
+${fashionHistoryPromptText()}
+
 Important product rules:
 - Use the user-confirmed category, color, and material as source of truth.
 - Uploaded garment DNA that must remain consistent: ${garmentDna}.
@@ -189,6 +193,7 @@ Important product rules:
 
 Each recommendation must include:
 - a clear reference that connects to the user's inspiration
+- if the selected direction uses a decade, designer era, or fashion-history moment, explain what time the user is borrowing from and what cultural mood shaped that style
 - no unrelated secondary reference unless the selected direction explicitly says to use it
 - one unexpected styling move
 - why it still works for the selected occasion

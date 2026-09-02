@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { z } from 'zod';
+import { fashionHistoryPromptText } from '@/lib/knowledge/fashionHistoryLibrary';
 import type { InspirationDirection, ReferenceType } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -90,11 +91,16 @@ Then interpret it into up to 4 meaningfully different styling directions before 
 This product is a fashion taste-building tool, not a generic outfit generator.
 Help the user choose what they actually mean by the reference.
 
+Reframed fashion history library:
+${fashionHistoryPromptText()}
+
 Critical grounding rules:
 - Every direction must come directly from "${inspiration}".
 - Do not introduce a different aesthetic, designer, film, artist, trend, or cultural reference unless it is literally part of the user's inspiration.
 - The title, interpretation, stylingCodes, wearableTranslation, and tension must all be traceable to the original inspiration.
 - If the inspiration is sensory, food, travel, place, mood, or color-based, translate those sensory cues into fashion. Do not substitute an unrelated fashion-history reference.
+- If the inspiration includes a decade, year, designer-era phrase, runway moment, or historical mood, use the fashion history library to explain what time the user is entering and what was happening culturally.
+- If the inspiration is "make this basic impressive" or similarly vague, offer strong historically grounded directions that could elevate a simple item, such as 1930s surreal glamour, 1950s couture polish, 1980s power proportion, 1990s minimal severity, or 2000s runway romance.
 - For "limoncello spritz", good directions would stay around Italian summer aperitivo, citrus brightness, coastal ease, glassware sparkle, breezy linen, sun-warmed color, and playful vacation polish. Bad directions would mention Indie Sleaze, Wes Anderson, generic artsy styling, or unrelated runway references.
 - If fewer than 3 strong directions exist, return fewer directions. Never invent weak directions to reach a fixed count.
 
@@ -107,10 +113,13 @@ Reference type guidance:
 - place/travel: translate climate, architecture, local style, palette, texture, and pace.
 - aesthetic: define the actual visual codes and avoid unrelated neighboring aesthetics.
 - historical era: identify silhouettes, materials, formality, and modern wearable translation.
+- runway/designer-era phrase: identify the designer, era, cultural mood, runway codes, and a wearable translation. If a year is given, stay close to that period.
 - vague/unknown: be conservative and only offer directions supported by the words the user gave.
 
 Each direction must:
 - identify a distinct interpretation of the reference
+- name the fashion-history moment or decade when relevant
+- explain what was happening culturally or socially when relevant
 - explain the visual codes a stylist would borrow
 - translate those codes into wearable styling
 - name the creative tension, such as surreal vs polished or costume vs everyday
