@@ -12,6 +12,8 @@ import {
 } from '@/lib/types';
 import { buildStylingContext } from '@/lib/stylingContext';
 
+type PlanMode = 'plan' | 'browsing';
+
 type Screen =
   | 'landing'
   | 'upload'
@@ -137,6 +139,9 @@ export default function Home() {
   const [preview, setPreview] = useState<string | null>(null);
 
   const [occasion, setOccasion] = useState<string>('');
+  const [planMode, setPlanMode] = useState<PlanMode>('plan');
+  const [wearTiming, setWearTiming] = useState<string>('today or tonight');
+  const [useSeasonWeather, setUseSeasonWeather] = useState(true);
   const [feeling, setFeeling] = useState<string>('');
   const [inspiration, setInspiration] = useState<string>('');
   const [inspirationDirections, setInspirationDirections] = useState<InspirationDirection[]>([]);
@@ -154,7 +159,23 @@ export default function Home() {
     () => Boolean(analysis && occasion && feeling),
     [analysis, occasion, feeling]
   );
-  const stylingContext = useMemo(() => buildStylingContext(occasion), [occasion]);
+  const wearingContextText = useMemo(
+    () =>
+      [
+        planMode === 'plan'
+          ? 'User has somewhere in mind.'
+          : 'User is browsing and wants flexible outfit ideas.',
+        occasion,
+        `Timing preference: ${wearTiming}.`,
+        useSeasonWeather
+          ? 'Use current season and inferred weather for the city if provided.'
+          : 'Do not anchor styling to current season/weather unless the user explicitly mentions it.'
+      ]
+        .filter(Boolean)
+        .join(' '),
+    [occasion, planMode, useSeasonWeather, wearTiming]
+  );
+  const stylingContext = useMemo(() => buildStylingContext(wearingContextText), [wearingContextText]);
 
   function navigate(next: Screen) {
     setScreen(next);
@@ -309,7 +330,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           analysis,
-          occasion,
+          occasion: wearingContextText,
           stylingContext,
           feeling,
           inspiration,
@@ -353,7 +374,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           analysis,
-          occasion,
+          occasion: wearingContextText,
           stylingContext,
           feeling,
           inspiration,
@@ -655,12 +676,14 @@ export default function Home() {
             </div>
 
             {preview && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={preview}
-                alt="Uploaded item"
-                className="aspect-square w-full rounded-[2rem] object-cover"
-              />
+              <div className="flex aspect-square w-full items-center justify-center rounded-[2rem] bg-white p-4 ring-1 ring-neutral-200">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={preview}
+                  alt="Uploaded item"
+                  className="max-h-full max-w-full rounded-2xl object-contain"
+                />
+              </div>
             )}
 
             <div className="space-y-4 rounded-[2rem] border border-neutral-200 p-4">
@@ -700,21 +723,96 @@ export default function Home() {
         {screen === 'occasion' && (
           <div className="space-y-6">
             <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Learn more about you
+              </p>
               <h2 className="text-3xl font-semibold tracking-tight">
-                Where are you wearing this?
+                Are you dressing for something, or just browsing?
               </h2>
               <p className="mt-2 text-sm text-neutral-500">
-                Type the plan naturally. I’ll infer occasion, city, timing, season, and practical weather needs.
+                Tell me naturally. I’ll use the plan, city, timing, season, and weather only when it helps.
               </p>
             </div>
 
-            <input
-              type="text"
-              value={occasion}
-              onChange={(e) => setOccasion(e.target.value)}
-              placeholder="Dinner in Paris tonight, work in Toronto, no plans..."
-              className="w-full rounded-2xl border border-neutral-200 p-4"
-            />
+            <div className="grid grid-cols-2 gap-2 rounded-2xl bg-neutral-100 p-1">
+              {[
+                { value: 'plan', label: 'I have a plan' },
+                { value: 'browsing', label: 'Just browsing' }
+              ].map((item) => (
+                <button
+                  key={item.value}
+                  onClick={() => setPlanMode(item.value as PlanMode)}
+                  className={`rounded-xl px-3 py-3 text-sm font-semibold transition ${
+                    planMode === item.value
+                      ? 'bg-white text-black shadow-sm'
+                      : 'text-neutral-500'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <label className="block space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                {planMode === 'plan' ? 'Where are you going?' : 'What should I style for?'}
+              </span>
+              <textarea
+                value={occasion}
+                onChange={(e) => setOccasion(e.target.value)}
+                placeholder={
+                  planMode === 'plan'
+                    ? 'Dinner in Paris, office day in Toronto, concert outside...'
+                    : 'No specific plan. I want ideas for this season, or something I could wear soon...'
+                }
+                rows={4}
+                className="w-full resize-none rounded-2xl border border-neutral-200 p-4 text-sm leading-relaxed"
+              />
+            </label>
+
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                When might you wear it?
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  'today or tonight',
+                  'tomorrow',
+                  'this weekend',
+                  'this season',
+                  'later / just ideas'
+                ].map((item) => (
+                  <button
+                    key={item}
+                    onClick={() => setWearTiming(item)}
+                    className={`rounded-full border px-4 py-2 text-sm ${
+                      wearTiming === item
+                        ? 'border-black bg-black text-white'
+                        : 'border-neutral-200 bg-white text-neutral-800'
+                    }`}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label className="flex items-start gap-3 rounded-2xl border border-neutral-200 p-4">
+              <input
+                type="checkbox"
+                checked={useSeasonWeather}
+                onChange={(e) => setUseSeasonWeather(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                <span className="block text-sm font-semibold">
+                  Assume current season and likely weather
+                </span>
+                <span className="mt-1 block text-xs leading-relaxed text-neutral-500">
+                  If you mention a city, I’ll infer practical styling needs. No live forecast yet.
+                </span>
+              </span>
+            </label>
 
             {occasion.trim() && (
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
@@ -736,29 +834,6 @@ export default function Home() {
                 </p>
               </div>
             )}
-
-            <div className="flex flex-wrap gap-2">
-              {[
-                'Dinner tonight',
-                'Work tomorrow',
-                'Brunch this weekend',
-                'Vacation dinner',
-                'Gallery opening',
-                'No plans, just ideas'
-              ].map((item) => (
-                <button
-                  key={item}
-                  onClick={() => setOccasion(item)}
-                  className={`rounded-full border px-4 py-2 text-sm ${
-                    occasion === item
-                      ? 'border-black bg-black text-white'
-                      : 'border-neutral-200 bg-white text-neutral-800'
-                  }`}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
             <button
               disabled={!occasion}
               onClick={() => navigate('feeling')}
@@ -771,17 +846,36 @@ export default function Home() {
 
         {screen === 'feeling' && (
           <div className="space-y-6">
-            <h2 className="text-3xl font-semibold tracking-tight">
-              How do you want to feel?
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div>
+              <h2 className="text-3xl font-semibold tracking-tight">
+                How do you want to show up?
+              </h2>
+              <p className="mt-2 text-sm text-neutral-500">
+                Type a feeling, an impression, or the version of yourself you want the outfit to express.
+              </p>
+            </div>
+
+            <input
+              type="text"
+              value={feeling}
+              onChange={(e) => setFeeling(e.target.value)}
+              placeholder="Polished but interesting, romantic, intimidating, expensive..."
+              className="w-full rounded-2xl border border-neutral-200 p-4"
+            />
+
+            <div className="flex flex-wrap gap-2">
               {FEELINGS.map((item) => (
-                <OptionButton
+                <button
                   key={item}
-                  label={item}
-                  selected={feeling === item}
                   onClick={() => setFeeling(item)}
-                />
+                  className={`rounded-full border px-4 py-2 text-sm ${
+                    feeling === item
+                      ? 'border-black bg-black text-white'
+                      : 'border-neutral-200 bg-white text-neutral-800'
+                  }`}
+                >
+                  {item}
+                </button>
               ))}
             </div>
             <button

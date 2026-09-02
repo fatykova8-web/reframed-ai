@@ -109,12 +109,18 @@ function seasonForMonth(month: number, hemisphere: 'north' | 'south') {
 function inferWeatherSummary({
   city,
   season,
-  timing
+  timing,
+  shouldUseCurrentSeasonWeather
 }: {
   city?: string;
   season: string;
   timing: string;
+  shouldUseCurrentSeasonWeather: boolean;
 }) {
+  if (!shouldUseCurrentSeasonWeather) {
+    return 'season/weather not assumed; style should stay flexible unless the user named a specific climate or season.';
+  }
+
   const lowerCity = city?.toLowerCase();
   const cityClimate = lowerCity ? CITY_CLIMATE[lowerCity] : undefined;
 
@@ -151,10 +157,13 @@ function practicalityNotes(season: string, timing: string, city?: string) {
 
 export function buildStylingContext(rawText: string, date = new Date()): StylingContext {
   const raw = normalizeText(rawText);
+  const shouldUseCurrentSeasonWeather = !raw.toLowerCase().includes('do not anchor styling to current season/weather');
   const city = detectCity(raw);
   const cityClimate = city ? CITY_CLIMATE[city.toLowerCase()] : undefined;
   const timing = detectTiming(raw);
-  const season = seasonForMonth(date.getMonth(), cityClimate?.hemisphere || 'north');
+  const season = shouldUseCurrentSeasonWeather
+    ? seasonForMonth(date.getMonth(), cityClimate?.hemisphere || 'north')
+    : 'flexible season';
 
   return {
     rawText: raw,
@@ -162,8 +171,10 @@ export function buildStylingContext(rawText: string, date = new Date()): Styling
     city,
     timing,
     season,
-    weatherSummary: inferWeatherSummary({ city, season, timing }),
-    practicalityNotes: practicalityNotes(season, timing, city),
+    weatherSummary: inferWeatherSummary({ city, season, timing, shouldUseCurrentSeasonWeather }),
+    practicalityNotes: shouldUseCurrentSeasonWeather
+      ? practicalityNotes(season, timing, city)
+      : ['Keep the outfit adaptable instead of weather-specific.'],
     isWeatherLive: false
   };
 }
