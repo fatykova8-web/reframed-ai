@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 import { z } from 'zod';
 import { recommendationCriticPrompt, recommendationPrompt } from '@/lib/prompts';
 import { garmentDnaLockText, garmentDnaText } from '@/lib/garmentDna';
@@ -65,7 +65,9 @@ const requestSchema = z.object({
   occasion: z.string().min(1),
   feeling: z.string().min(1),
   inspiration: z.string().optional().default(''),
-  inspirationDirection: inspirationDirectionSchema.nullable().optional()
+  inspirationDirection: inspirationDirectionSchema.nullable().optional(),
+  uploadedItemImageBase64: z.string().optional(),
+  uploadedItemImageMimeType: z.string().optional()
 });
 
 function safeJsonParse<T>(text: string, fallback: T): T {
@@ -268,32 +270,108 @@ function enforceGarmentVisualPrompt(rec: Recommendation, analysis: ItemAnalysis)
   };
 }
 
-async function generateMoodboardImage(prompt: string, analysis: ItemAnalysis): Promise<string | null> {
-  if (
-    process.env.GENERATE_MOODBOARD_IMAGES !== 'true' ||
-    process.env.GENERATE_MOODBOARD_IMAGES_SYNC !== 'true'
-  ) {
+function imageExtensionFromMimeType(mimeType?: string) {
+  if (mimeType === 'image/png') return 'png';
+  if (mimeType === 'image/webp') return 'webp';
+  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') return 'jpg';
+  return 'png';
+}
+
+async function generateMoodboardImage({
+  prompt,
+  analysis,
+  uploadedItemImageBase64,
+  uploadedItemImageMimeType,
+  requestId,
+  lookId
+}: {
+  prompt: string;
+  analysis: ItemAnalysis;
+  uploadedItemImageBase64?: string;
+  uploadedItemImageMimeType?: string;
+  requestId?: string;
+  lookId?: string;
+}): Promise<string | null> {
+  if (process.env.GENERATE_MOODBOARD_IMAGES === 'false') {
     console.info('[generate-looks-debug] Skipping synchronous moodboard image generation', {
-      enabled: process.env.GENERATE_MOODBOARD_IMAGES === 'true',
-      syncEnabled: process.env.GENERATE_MOODBOARD_IMAGES_SYNC === 'true'
+      requestId,
+      lookId,
+      enabled: false
     });
     return null;
   }
 
+  const collagePrompt = `${prompt}
+
+Create a square fashion outfit inspiration collage / flat-lay using the uploaded garment image as the central hero piece.
+
+Hard visual rules:
+- Preserve the uploaded garment from the source image exactly. Do not redesign it.
+- Keep the same garment category, color, material, pattern, silhouette, fit, sleeve length, length, collar/neckline, visible details, scale, and proportions.
+- Do not crop, shorten, recolor, restyle, transform, replace, or simplify the garment.
+- Arrange the suggested pairings around the uploaded garment as a polished styling collage.
+- Show all key pairing items named in the look.
+- Do not show a human model.
+- Do not include text, labels, captions, UI, or watermarks.
+- Keep the composition clean, editorial, and useful for deciding whether to wear the outfit.
+
+Exact Garment DNA: ${garmentDescriptor(analysis)}.
+${garmentDnaLockText(analysis)}`;
+
   try {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const imageResponse = await openai.images.generate({
+
+    console.info('[generate-looks-debug] Sending moodboard image request', {
+      requestId,
+      lookId,
       model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
-      prompt: `${prompt}. The central hero object must be the uploaded garment with this exact Garment DNA: ${garmentDescriptor(analysis)}. ${garmentDnaLockText(analysis)} Include that garment clearly and completely in the flat lay, then arrange supporting wardrobe pieces around it. Do not include a human model. Do not include text. Single square image. Clean fashion moodboard, high quality lighting.`,
-      size: '1024x1024'
+      hasUploadedImage: Boolean(uploadedItemImageBase64),
+      uploadedItemImageMimeType,
+      uploadedItemImageBase64Length: uploadedItemImageBase64?.length
+    });
+
+    const imageResponse = uploadedItemImageBase64
+      ? await openai.images.edit({
+          model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
+          image: await toFile(
+            Buffer.from(uploadedItemImageBase64, 'base64'),
+            `uploaded-garment.${imageExtensionFromMimeType(uploadedItemImageMimeType)}`,
+            { type: uploadedItemImageMimeType || 'image/png' }
+          ),
+          prompt: collagePrompt,
+          input_fidelity: 'high',
+          quality: 'low',
+          size: '1024x1024',
+          output_format: 'jpeg',
+          output_compression: 85
+        })
+      : await openai.images.generate({
+          model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
+          prompt: collagePrompt,
+          quality: 'low',
+          size: '1024x1024',
+          output_format: 'jpeg',
+          output_compression: 85
+        });
+
+    console.info('[generate-looks-debug] Moodboard image response received', {
+      requestId,
+      lookId,
+      hasData: Boolean(imageResponse.data?.length)
     });
 
     const first = imageResponse.data?.[0] as any;
-    if (first?.b64_json) return `data:image/png;base64,${first.b64_json}`;
+    if (first?.b64_json) return `data:image/jpeg;base64,${first.b64_json}`;
     if (first?.url) return first.url;
     return null;
-  } catch (error) {
-    console.error('Moodboard image generation failed:', error);
+  } catch (error: any) {
+    console.error('[generate-looks-debug] Moodboard image generation failed', {
+      requestId,
+      lookId,
+      status: error?.status,
+      message: error?.message,
+      errorBody: error?.error || error?.response?.data || error
+    });
     return null;
   }
 }
@@ -338,7 +416,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request payload.' }, { status: 400 });
   }
 
-  const { analysis, occasion, feeling, inspiration, inspirationDirection } = parsed.data;
+  const {
+    analysis,
+    occasion,
+    feeling,
+    inspiration,
+    inspirationDirection,
+    uploadedItemImageBase64,
+    uploadedItemImageMimeType
+  } = parsed.data;
 
   try {
     const recommendations = await createRecommendations(
@@ -375,7 +461,14 @@ export async function POST(req: NextRequest) {
 
         return {
           ...groundedRec,
-          moodboardImage: await generateMoodboardImage(groundedRec.visualPrompt, analysis)
+          moodboardImage: await generateMoodboardImage({
+            prompt: groundedRec.visualPrompt,
+            analysis,
+            uploadedItemImageBase64,
+            uploadedItemImageMimeType,
+            requestId,
+            lookId: groundedRec.id
+          })
         };
       })
     );
