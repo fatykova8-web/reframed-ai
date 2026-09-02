@@ -32,8 +32,13 @@ type ClarifyResult = {
   directions?: InspirationDirection[];
   error?: string;
 };
+type UploadedImagePayload = {
+  base64: string;
+  mimeType: string;
+};
 
 const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
+const SUPPORTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 
 async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T & { error?: string }> {
   const contentType = response.headers.get('content-type') || '';
@@ -134,6 +139,7 @@ export default function Home() {
   const [screen, setScreen] = useState<Screen>('landing');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [uploadedImagePayload, setUploadedImagePayload] = useState<UploadedImagePayload | null>(null);
 
   const [occasion, setOccasion] = useState<string>('');
   const [feeling, setFeeling] = useState<string>('');
@@ -164,8 +170,8 @@ export default function Home() {
     const uploaded = e.target.files?.[0];
     if (!uploaded) return;
 
-    if (!uploaded.type.startsWith('image/')) {
-      setError('Please upload an image file.');
+    if (!SUPPORTED_IMAGE_TYPES.includes(uploaded.type)) {
+      setError('Please upload a PNG, JPG, or WebP image.');
       return;
     }
 
@@ -182,6 +188,7 @@ export default function Home() {
 
     setFile(uploaded);
     setPreview(URL.createObjectURL(uploaded));
+    setUploadedImagePayload(null);
     setAnalysis(null);
     setLooks([]);
     setInspirationDirections([]);
@@ -191,6 +198,7 @@ export default function Home() {
 
     try {
       const imageBase64 = await fileToBase64(uploaded);
+      setUploadedImagePayload({ base64: imageBase64, mimeType: uploaded.type });
       const requestBody = JSON.stringify({ imageBase64, imageMimeType: uploaded.type });
       console.info('[upload-debug] Posting analyze-item request', {
         fileName: uploaded.name,
@@ -302,6 +310,15 @@ export default function Home() {
     navigate('loading');
 
     try {
+      let imagePayload = uploadedImagePayload;
+
+      if (!imagePayload && file) {
+        imagePayload = {
+          base64: await fileToBase64(file),
+          mimeType: file.type
+        };
+      }
+
       const response = await fetch('/api/generate-looks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -310,7 +327,9 @@ export default function Home() {
           occasion,
           feeling,
           inspiration,
-          inspirationDirection: selectedDirection
+          inspirationDirection: selectedDirection,
+          uploadedItemImageBase64: imagePayload?.base64,
+          uploadedItemImageMimeType: imagePayload?.mimeType
         })
       });
 
@@ -445,9 +464,11 @@ export default function Home() {
               className="h-full w-full object-cover"
             />
           ) : (
-            <div className="p-5">
-              <p className="font-medium text-neutral-500">Visual concept prompt</p>
-              <p className="mt-2 text-xs leading-relaxed">{look.visualPrompt}</p>
+            <div className="p-6">
+              <p className="font-medium text-neutral-500">Collage preview unavailable</p>
+              <p className="mt-2 text-xs leading-relaxed">
+                The outfit idea is ready below. The visual collage could not be created this time.
+              </p>
             </div>
           )}
         </div>
@@ -622,7 +643,7 @@ export default function Home() {
               )}
               <input
                 type="file"
-                accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
                 onChange={handleUpload}
                 className="absolute inset-0 opacity-0"
               />
