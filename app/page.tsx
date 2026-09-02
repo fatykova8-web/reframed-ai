@@ -32,10 +32,6 @@ type ClarifyResult = {
   directions?: InspirationDirection[];
   error?: string;
 };
-type UploadedImagePayload = {
-  base64: string;
-  mimeType: string;
-};
 
 const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 const SUPPORTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
@@ -139,7 +135,6 @@ export default function Home() {
   const [screen, setScreen] = useState<Screen>('landing');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [uploadedImagePayload, setUploadedImagePayload] = useState<UploadedImagePayload | null>(null);
 
   const [occasion, setOccasion] = useState<string>('');
   const [feeling, setFeeling] = useState<string>('');
@@ -188,7 +183,6 @@ export default function Home() {
 
     setFile(uploaded);
     setPreview(URL.createObjectURL(uploaded));
-    setUploadedImagePayload(null);
     setAnalysis(null);
     setLooks([]);
     setInspirationDirections([]);
@@ -198,7 +192,6 @@ export default function Home() {
 
     try {
       const imageBase64 = await fileToBase64(uploaded);
-      setUploadedImagePayload({ base64: imageBase64, mimeType: uploaded.type });
       const requestBody = JSON.stringify({ imageBase64, imageMimeType: uploaded.type });
       console.info('[upload-debug] Posting analyze-item request', {
         fileName: uploaded.name,
@@ -310,15 +303,6 @@ export default function Home() {
     navigate('loading');
 
     try {
-      let imagePayload = uploadedImagePayload;
-
-      if (!imagePayload && file) {
-        imagePayload = {
-          base64: await fileToBase64(file),
-          mimeType: file.type
-        };
-      }
-
       const response = await fetch('/api/generate-looks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -327,9 +311,7 @@ export default function Home() {
           occasion,
           feeling,
           inspiration,
-          inspirationDirection: selectedDirection,
-          uploadedItemImageBase64: imagePayload?.base64,
-          uploadedItemImageMimeType: imagePayload?.mimeType
+          inspirationDirection: selectedDirection
         })
       });
 
@@ -436,26 +418,7 @@ export default function Home() {
           <h3 className="mt-1 text-2xl font-semibold tracking-tight">{look.title}</h3>
         </div>
 
-        {look.uploadedItemImage && (
-          <div className="mb-4 overflow-hidden rounded-3xl border border-neutral-200 bg-neutral-50">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={look.uploadedItemImage}
-              alt="Exact uploaded item"
-              className="aspect-square w-full object-cover"
-            />
-            <div className="border-t border-neutral-200 p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
-                Exact uploaded item
-              </p>
-              <p className="mt-1 text-xs text-neutral-600">
-                This is the unchanged piece these suggestions are built around.
-              </p>
-            </div>
-          </div>
-        )}
-
-        <div className="mb-4 flex aspect-square items-center justify-center overflow-hidden rounded-3xl bg-neutral-100 text-center text-sm text-neutral-400">
+        <div className="relative mb-4 aspect-square overflow-hidden rounded-3xl bg-neutral-100 text-sm text-neutral-400">
           {look.moodboardImage ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -464,11 +427,24 @@ export default function Home() {
               className="h-full w-full object-cover"
             />
           ) : (
-            <div className="p-6">
+            <div className="flex h-full items-center justify-center p-6 text-center">
               <p className="font-medium text-neutral-500">Collage preview unavailable</p>
-              <p className="mt-2 text-xs leading-relaxed">
-                The outfit idea is ready below. The visual collage could not be created this time.
-              </p>
+            </div>
+          )}
+
+          {look.uploadedItemImage && (
+            <div className="absolute left-3 top-3 w-[42%] overflow-hidden rounded-2xl border border-white bg-white shadow-lg">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={look.uploadedItemImage}
+                alt="Exact uploaded item"
+                className="aspect-square w-full object-cover"
+              />
+              <div className="border-t border-neutral-100 px-2 py-1.5">
+                <p className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-neutral-500">
+                  Your exact item
+                </p>
+              </div>
             </div>
           )}
         </div>
