@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI, { toFile } from 'openai';
+import OpenAI from 'openai';
 import { z } from 'zod';
 import { recommendationCriticPrompt, recommendationPrompt } from '@/lib/prompts';
 import { garmentDnaLockText, garmentDnaText } from '@/lib/garmentDna';
@@ -65,9 +65,7 @@ const requestSchema = z.object({
   occasion: z.string().min(1),
   feeling: z.string().min(1),
   inspiration: z.string().optional().default(''),
-  inspirationDirection: inspirationDirectionSchema.nullable().optional(),
-  uploadedItemImageBase64: z.string().optional(),
-  uploadedItemImageMimeType: z.string().optional()
+  inspirationDirection: inspirationDirectionSchema.nullable().optional()
 });
 
 function safeJsonParse<T>(text: string, fallback: T): T {
@@ -257,6 +255,120 @@ async function scoreAndRepairRecommendation({
   };
 }
 
+async function diversifyRecommendationSet({
+  recommendations,
+  analysis,
+  occasion,
+  feeling,
+  inspiration,
+  inspirationDirection,
+  requestId
+}: {
+  recommendations: Recommendation[];
+  analysis: ItemAnalysis;
+  occasion: string;
+  feeling: string;
+  inspiration: string;
+  inspirationDirection?: InspirationDirection | null;
+  requestId?: string;
+}): Promise<Recommendation[]> {
+  if (recommendations.length < 2) return recommendations;
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  console.info('[generate-looks-debug] Sending set diversity request', {
+    requestId,
+    recommendationCount: recommendations.length
+  });
+
+  const response = await openai.chat.completions.create({
+    model: process.env.OPENAI_TEXT_MODEL || 'gpt-4o-mini',
+    response_format: { type: 'json_object' },
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are a fashion editor improving a set of outfit recommendations. Return only valid JSON.'
+      },
+      {
+        role: 'user',
+        content: `Review these 3 Reframed styling recommendations as a set.
+
+User-confirmed garment:
+${JSON.stringify(analysis, null, 2)}
+
+Occasion: ${occasion}
+Desired feeling: ${feeling}
+Original inspiration: ${inspiration || 'No specific inspiration provided'}
+Selected inspiration direction: ${
+          inspirationDirection ? JSON.stringify(inspirationDirection, null, 2) : 'None selected'
+        }
+
+Current recommendations:
+${JSON.stringify(recommendations, null, 2)}
+
+Rewrite only what is needed so the 3 options are clearly different outfit strategies.
+
+Rules:
+- Keep exactly 3 recommendations with these type values: Conservative, Balanced, Statement.
+- Keep the uploaded garment as the hero in every look.
+- Keep the selected inspiration/direction as the primary reference in every look.
+- Do not introduce unrelated references.
+- Do not repeat the same bottom silhouette across options unless unavoidable.
+- Do not repeat the same shoe type across options.
+- Do not repeat the same bag/accessory strategy across options.
+- Do not repeat the same unexpectedMove.
+- Conservative should be easiest to wear.
+- Balanced should add a visible styling twist.
+- Statement should be the boldest but still realistic.
+- Each pairings array must name different supporting pieces.
+- Each visualPrompt must describe a different supporting collage composition.
+
+Return ONLY valid JSON:
+{
+  "recommendations": [
+    {
+      "type": "Conservative",
+      "title": "short title",
+      "rationale": "one sentence",
+      "reference": "specific selected inspiration or selected direction used",
+      "unexpectedMove": "one specific styling move",
+      "pairings": ["pairing 1", "pairing 2", "pairing 3", "pairing 4"],
+      "explanation": "2-3 sentences",
+      "visualPrompt": "flat-lay fashion moodboard prompt describing only the supporting pieces, cultural reference, and styling energy"
+    }
+  ]
+}`
+      }
+    ]
+  });
+
+  console.info('[generate-looks-debug] Set diversity response received', {
+    requestId,
+    responseId: response.id,
+    model: response.model,
+    finishReason: response.choices[0]?.finish_reason
+  });
+
+  const parsed = safeJsonParse<{
+    recommendations?: RecommendationDraft[];
+  }>(response.choices[0]?.message?.content || '{}', {});
+
+  if (!parsed.recommendations?.length) {
+    console.error('[generate-looks-debug] Set diversity returned no recommendations', {
+      requestId
+    });
+    return recommendations;
+  }
+
+  return parsed.recommendations.slice(0, 3).map((rec, index) => ({
+    ...recommendations[index],
+    ...rec,
+    id: recommendations[index]?.id || `look-${Date.now()}-${index}`,
+    moodboardImage: null
+  }));
+}
+
 function garmentDescriptor(analysis: ItemAnalysis) {
   return garmentDnaText(analysis);
 }
@@ -270,25 +382,14 @@ function enforceGarmentVisualPrompt(rec: Recommendation, analysis: ItemAnalysis)
   };
 }
 
-function imageExtensionFromMimeType(mimeType?: string) {
-  if (mimeType === 'image/png') return 'png';
-  if (mimeType === 'image/webp') return 'webp';
-  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') return 'jpg';
-  return 'png';
-}
-
 async function generateMoodboardImage({
   prompt,
   analysis,
-  uploadedItemImageBase64,
-  uploadedItemImageMimeType,
   requestId,
   lookId
 }: {
   prompt: string;
   analysis: ItemAnalysis;
-  uploadedItemImageBase64?: string;
-  uploadedItemImageMimeType?: string;
   requestId?: string;
   lookId?: string;
 }): Promise<string | null> {
@@ -303,14 +404,14 @@ async function generateMoodboardImage({
 
   const collagePrompt = `${prompt}
 
-Create a square fashion outfit inspiration collage / flat-lay using the uploaded garment image as the central hero piece.
+Create a square fashion outfit inspiration collage / flat-lay for the styling recommendation.
 
-Hard visual rules:
-- Preserve the uploaded garment from the source image exactly. Do not redesign it.
-- Keep the same garment category, color, material, pattern, silhouette, fit, sleeve length, length, collar/neckline, visible details, scale, and proportions.
-- Do not crop, shorten, recolor, restyle, transform, replace, or simplify the garment.
-- Arrange the suggested pairings around the uploaded garment as a polished styling collage.
-- Show all key pairing items named in the look.
+Important composition rule:
+- The app will overlay the user's exact uploaded garment photo on top of this collage.
+- Generate the supporting outfit pieces, accessories, color mood, and reference atmosphere around a clean open space in the upper-left area.
+- Do not recreate, repaint, redraw, replace, or include another version of the uploaded garment.
+- Do not add a second blouse/top/dress/shirt that could be mistaken for the user's garment.
+- Show all key pairing items named in the look, arranged as a polished styling board around the reserved source-item space.
 - Do not show a human model.
 - Do not include text, labels, captions, UI, or watermarks.
 - Keep the composition clean, editorial, and useful for deciding whether to wear the outfit.
@@ -324,35 +425,17 @@ ${garmentDnaLockText(analysis)}`;
     console.info('[generate-looks-debug] Sending moodboard image request', {
       requestId,
       lookId,
-      model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
-      hasUploadedImage: Boolean(uploadedItemImageBase64),
-      uploadedItemImageMimeType,
-      uploadedItemImageBase64Length: uploadedItemImageBase64?.length
+      model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
     });
 
-    const imageResponse = uploadedItemImageBase64
-      ? await openai.images.edit({
-          model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
-          image: await toFile(
-            Buffer.from(uploadedItemImageBase64, 'base64'),
-            `uploaded-garment.${imageExtensionFromMimeType(uploadedItemImageMimeType)}`,
-            { type: uploadedItemImageMimeType || 'image/png' }
-          ),
-          prompt: collagePrompt,
-          input_fidelity: 'high',
-          quality: 'low',
-          size: '1024x1024',
-          output_format: 'jpeg',
-          output_compression: 85
-        })
-      : await openai.images.generate({
-          model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
-          prompt: collagePrompt,
-          quality: 'low',
-          size: '1024x1024',
-          output_format: 'jpeg',
-          output_compression: 85
-        });
+    const imageResponse = await openai.images.generate({
+      model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
+      prompt: collagePrompt,
+      quality: 'low',
+      size: '1024x1024',
+      output_format: 'jpeg',
+      output_compression: 85
+    });
 
     console.info('[generate-looks-debug] Moodboard image response received', {
       requestId,
@@ -421,9 +504,7 @@ export async function POST(req: NextRequest) {
     occasion,
     feeling,
     inspiration,
-    inspirationDirection,
-    uploadedItemImageBase64,
-    uploadedItemImageMimeType
+    inspirationDirection
   } = parsed.data;
 
   try {
@@ -441,8 +522,18 @@ export async function POST(req: NextRequest) {
       recommendationCount: recommendations.length
     });
 
+    const diversifiedRecommendations = await diversifyRecommendationSet({
+      recommendations,
+      analysis,
+      occasion,
+      feeling,
+      inspiration,
+      inspirationDirection,
+      requestId
+    });
+
     const scoredRecommendations = await Promise.all(
-      recommendations.map((recommendation) =>
+      diversifiedRecommendations.map((recommendation) =>
         scoreAndRepairRecommendation({
           recommendation,
           analysis,
@@ -464,8 +555,6 @@ export async function POST(req: NextRequest) {
           moodboardImage: await generateMoodboardImage({
             prompt: groundedRec.visualPrompt,
             analysis,
-            uploadedItemImageBase64,
-            uploadedItemImageMimeType,
             requestId,
             lookId: groundedRec.id
           })

@@ -201,6 +201,19 @@ Generate exactly 3 styling recommendations with expression levels:
 2. Balanced — visibly stylish, still realistic
 3. Statement — boldest version, but still wearable for the context
 
+The 3 recommendations must be genuinely different outfit strategies, not the same outfit with a different background.
+Across the set:
+- Do not repeat the same bottom silhouette in more than one look unless the uploaded garment forces it.
+- Do not repeat the same shoe type in more than one look.
+- Do not repeat the same bag/accessory strategy in more than one look.
+- Do not reuse the same unexpectedMove idea.
+- Each look must have a distinct color strategy:
+  1. Conservative: quiet grounding color or neutral contrast
+  2. Balanced: one visible reference color or texture contrast
+  3. Statement: boldest reference color, proportion, or accessory move
+- Each look must solve a different wearer hesitation: easy to wear, more styled, and memorable but still realistic.
+- The visualPrompt for each look must describe different supporting pieces and a different styling composition.
+
 Return ONLY valid JSON with this exact shape:
 {
   "recommendations": [
