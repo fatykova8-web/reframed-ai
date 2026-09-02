@@ -749,8 +749,8 @@ export default function Home() {
                 What inspired this look?
               </h2>
               <p className="mt-2 text-sm text-neutral-500">
-                Optional. Reference a celebrity, album, movie, fashion trend,
-                designer, aesthetic, or cultural moment.
+                Optional. Reference a decade, runway moment, designer, movie,
+                place, mood, or cultural moment.
               </p>
             </div>
 
@@ -764,15 +764,15 @@ export default function Home() {
 
             <div className="flex flex-wrap gap-2">
               {[
-                'Mob Wife',
-                'To Pimp A Butterfly',
+                '1930s surreal glamour',
+                '1950s New Look',
+                '1970s liberated ease',
+                '1990s minimalism',
+                'Galliano 2000',
+                'Gothic romance',
+                'Japandi restraint',
                 'Studio 54',
-                'Old Hollywood',
-                'Miu Miu',
-                'Bruno Mars',
-                'Sabrina Carpenter',
-                'The Devil Wears Prada',
-                'Art Gallery Opening'
+                'Make it impressive'
               ].map((item) => (
                 <button
                   key={item}
