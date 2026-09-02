@@ -433,7 +433,7 @@ export default function Home() {
           )}
 
           {look.uploadedItemImage && (
-            <div className="absolute left-3 top-3 w-[42%] overflow-hidden rounded-2xl border border-white bg-white shadow-lg">
+            <div className="absolute left-3 top-3 w-[38%] overflow-hidden rounded-2xl border border-white bg-white shadow-xl ring-1 ring-black/5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={look.uploadedItemImage}
@@ -442,7 +442,7 @@ export default function Home() {
               />
               <div className="border-t border-neutral-100 px-2 py-1.5">
                 <p className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-neutral-500">
-                  Your exact item
+                  Exact item
                 </p>
               </div>
             </div>
