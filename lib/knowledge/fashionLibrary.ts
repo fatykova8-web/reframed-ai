@@ -69,6 +69,22 @@ export const FASHION_LIBRARY: FashionReference[] = [
     stylingCodes: ['micro proportion', 'visible socks', 'collar detail', 'school-uniform tension'],
     wearableTranslation:
       'Make a classic piece feel current with one intentionally awkward or youthful styling code.'
+  },
+  {
+    name: 'Old Hollywood',
+    meaning:
+      'Classic screen glamour built from polish, line, shine, and composed elegance.',
+    stylingCodes: ['sleek tailoring', 'satin finish', 'red lip polish', 'clean dramatic line'],
+    wearableTranslation:
+      'Use one glamorous element and keep the rest refined, simple, and intentional.'
+  },
+  {
+    name: 'Mob Wife',
+    meaning:
+      'High-drama glamour with plush texture, gold accents, sharp confidence, and polished excess.',
+    stylingCodes: ['faux fur texture', 'gold jewelry', 'black leather', 'glossy finish'],
+    wearableTranslation:
+      'Channel the drama through one plush or glossy statement while keeping the outfit wearable.'
   }
 ];
 
