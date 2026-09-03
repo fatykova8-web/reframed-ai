@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { z } from 'zod';
 import { garmentDnaLockText, garmentDnaText } from '@/lib/garmentDna';
-import type { ItemAnalysis, Recommendation } from '@/lib/types';
+import { stylingContextPromptText } from '@/lib/stylingContext';
+import type { ItemAnalysis, Recommendation, StylingContext } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -10,6 +11,18 @@ export const maxDuration = 60;
 const requestSchema = z.object({
   analysis: z.any(),
   occasion: z.string().min(1),
+  stylingContext: z
+    .object({
+      rawText: z.string().default(''),
+      occasion: z.string().default(''),
+      city: z.string().optional(),
+      timing: z.string().default('unspecified timing'),
+      season: z.string().default('unspecified season'),
+      weatherSummary: z.string().default(''),
+      practicalityNotes: z.array(z.string()).default([]),
+      isWeatherLive: z.boolean().default(false)
+    })
+    .optional(),
   feeling: z.string().min(1),
   inspiration: z.string().optional().default(''),
   inspirationDirection: z
@@ -124,6 +137,7 @@ export async function POST(req: NextRequest) {
   const {
     analysis,
     occasion,
+    stylingContext,
     feeling,
     inspiration,
     inspirationDirection,
@@ -144,6 +158,9 @@ ${garmentDnaLockText(analysis)}
 
 Occasion:
 ${occasion}
+
+Detected wearing context:
+${stylingContextPromptText(stylingContext as StylingContext | undefined)}
 
 Desired feeling:
 ${feeling}
@@ -170,6 +187,7 @@ Rules:
 - Do not create a generic outfit.
 - If feedback is "Too basic", make the look more fashion-forward and less predictable.
 - If feedback is "Not wearable", simplify the proportions and make it realistic without becoming boring.
+- If feedback is "Not wearable", specifically improve practicality for the detected city/place, season, timing, and likely weather needs.
 - If feedback is "More artistic", increase art/fashion-history influence and add stronger styling intelligence.
 - If feedback is "More reference", make the user's inspiration more visible and explain the connection.
 - If feedback is "More colorful", add intentional color styling and avoid random color chaos.
